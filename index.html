@@ -1004,6 +1004,7 @@ let state = null;
 state = load();
 if (!state || state.version < 3) state = freshState();
 function migrate() {
+  if (state && Array.isArray(state.meals)) { const seen = new Set(); state.meals.forEach(m => { if (seen.has(m.id)) m.id = 'u' + Math.random().toString(36).slice(2, 9); seen.add(m.id); }); }
 if (state.version === 3) { const f = freshState(); ['slots','skipped','servings','household','themesOn','themes','noRepeat','decidePool'].forEach(k => state[k] = f[k]); state.version = 4; }
 if (state.version === 4) { const wk0 = iso(weekDays(new Date())[0]); state.checked = Array.isArray(state.checked) ? { [wk0]: state.checked } : (state.checked || {}); state.extras = {}; state.sections = ['Produce','Meat & Fish','Dairy','Bakery','Pantry','Frozen','Other']; state.pantry.forEach(p => { if (!p.section) p.section = ({ Eggs:'Dairy' })[p.name] || 'Pantry'; }); state.version = 5; }
 if (state.version === 5) { const f = freshState(); ['diet','hideIng','units','currency','skin','textSize','reduceMotion','showTips','weekStart','lastBackup','notes'].forEach(k => { if (state[k] === undefined) state[k] = f[k]; }); state.version = 6; }
@@ -1141,11 +1142,15 @@ const SECTIONS = ['Produce','Meat & Fish','Dairy','Bakery','Pantry','Frozen','Ot
 const ICON_CHOICES = ['🍝','🍛','🍲','🥗','🍗','🌮','🌯','🥙','🍕','🍔','🥪','🍜','🍚','🍳','🐟','🍤','🥩','🥘','🫕','🥞','🥣','🍞','🥑','🧀','🥔','🥦','🍎','🍌','🥤','🍰'];
 const ui = { showHidden: false, q: '', type: 'all', fav: false, safe: false, low: false, nocook: false, mine: false, sort: 'name' };
 
+
+const STARTER_IDS = new Set(STARTER_MEALS.map(m => m.id));
+function mineIds() { const seen = new Set(), out = new Set(); state.meals.forEach((m, i) => { const key = m.id; if (!STARTER_IDS.has(key) || seen.has(key)) out.add(i); seen.add(key); }); return out; }
 function filteredMeals() {
+  const mine = mineIds();
   const q = ui.q.trim().toLowerCase();
-  let list = state.meals.filter(m => (ui.showHidden || allowed(m)) &&
+  let list = state.meals.filter((m, idx) => (ui.mine ? mine.has(idx) : (ui.showHidden || allowed(m))) &&
     (ui.type === 'all' || m.type === ui.type) &&
-    (!ui.fav || m.fav) && (!ui.safe || m.safe) && (!ui.mine || m.id.startsWith('u')) && (!ui.low || m.energy === 'low') && (!ui.nocook || m.noCook) &&
+    (!ui.fav || m.fav) && (!ui.safe || m.safe) &&  (!ui.low || m.energy === 'low') && (!ui.nocook || m.noCook) &&
     (!q || m.name.toLowerCase().includes(q) || m.ing.some(i => i[0].toLowerCase().includes(q)) || (m.theme || '').toLowerCase().includes(q)));
   const er = { low: 0, med: 1, high: 2 };
   if (ui.sort === 'name') list.sort((a, b) => a.name.localeCompare(b.name));
@@ -1177,13 +1182,13 @@ function renderMeals() {
   <div class="tabs" role="tablist" aria-label="Meal type">
     ${['all','breakfast','lunch','dinner','snack'].map(t => `<button type="button" role="tab" data-type="${t}" aria-selected="${ui.type === t}">${t === 'all' ? 'All' : TYPE_LABEL[t] + (t === 'snack' ? 's' : '')}<span>${counts[t]}</span></button>`).join('')}
   </div>
-  <div class="fchips">${chip('fav','★ Favorites')}${chip('safe','♥ Safe foods')}${chip('low','Low effort')}${chip('nocook','No cooking')}${state.meals.some(m => m.id.startsWith('u')) ? chip('mine','✎ Added by me') : ''}</div>
+  <div class="fchips">${chip('fav','★ Favorites')}${chip('safe','♥ Safe foods')}${chip('low','Low effort')}${chip('nocook','No cooking')}${mineIds().size ? chip('mine', `✎ Added by me (${mineIds().size})`) : ''}</div>
 
   ${list.length ? `<div class="rgrid">${list.map(m => `
     <article class="rcard">
       <button type="button" class="rcard-hit" data-recipe="${m.id}" aria-label="Open ${esc(m.name)}"></button>
       <div class="rcard-art" style="--pa:${tint(m)[0]};--pb:${tint(m)[1]}">${plate(m, 104)}
-        <span class="rtype">${TYPE_LABEL[m.type]}${m.id.startsWith('u') ? ' · Yours' : ''}</span>
+        <span class="rtype">${TYPE_LABEL[m.type]}${!STARTER_IDS.has(m.id) ? ' · Yours' : ''}</span>
       </div>
       <div class="rcard-body">
         <h3>${esc(m.name)}</h3>
